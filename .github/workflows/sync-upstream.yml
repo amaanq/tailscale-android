@@ -1,0 +1,95 @@
+name: Sync with Upstream
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/tailscale/tailscale-android.git || true
+          git fetch upstream
+
+      - name: Check for new upstream changes
+        id: check
+        run: |
+          # Check if upstream/main has commits we don't have
+          git fetch upstream main
+
+          # Count commits in upstream that we don't have
+          NEW_COMMITS=$(git rev-list --count HEAD..upstream/main)
+
+          # Get latest upstream tag for the PR title
+          UPSTREAM_TAG=$(git describe --tags --abbrev=0 upstream/main 2>/dev/null || echo "main")
+
+          echo "upstream_tag=$UPSTREAM_TAG" >> $GITHUB_OUTPUT
+          echo "new_commits=$NEW_COMMITS" >> $GITHUB_OUTPUT
+
+          if [ "$NEW_COMMITS" -gt 0 ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "Found $NEW_COMMITS new commits from upstream (latest: $UPSTREAM_TAG)"
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "Already up to date with upstream"
+          fi
+
+      - name: Rebase on upstream
+        if: steps.check.outputs.has_changes == 'true'
+        run: |
+          git checkout -b sync-upstream-${{ github.run_number }}
+
+          # Rebase our patches on top of upstream
+          git rebase upstream/main || {
+            echo "Failed to rebase, run this locally:"
+            echo "  git fetch upstream"
+            echo "  git rebase upstream/main"
+            echo "  # Resolve conflicts"
+            echo "  git rebase --continue"
+            exit 1
+          }
+
+          git push -f origin sync-upstream-${{ github.run_number }}
+
+      - name: Create Pull Request
+        if: steps.check.outputs.has_changes == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: sync-upstream-${{ github.run_number }}
+          title: "sync upstream ${{ steps.check.outputs.upstream_tag }}"
+          body: |
+            ## Upstream Sync
+
+            Latest upstream tag: `${{ steps.check.outputs.upstream_tag }}`
+            New commits from upstream: `${{ steps.check.outputs.new_commits }}`
+
+            This PR rebases our patches on top of the latest upstream changes.
+
+            **Review the changes carefully before merging!**
+
+            After merging, a release will be automatically created and built.
+          draft: false
+
+      - name: Auto-merge if clean rebase
+        if: steps.check.outputs.has_changes == 'true' && env.AUTO_MERGE == 'true'
+        run: |
+          # Only auto-merge if AUTO_MERGE=true in repo variables
+          gh pr merge sync-upstream-${{ github.run_number }} --auto --rebase
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
