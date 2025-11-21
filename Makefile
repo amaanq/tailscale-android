@@ -14,6 +14,7 @@ DOCKER_IMAGE := tailscale-android-build-amd64-041425-1
 export TS_USE_TOOLCHAIN=1
 
 DEBUG_APK := tailscale-debug.apk
+RELEASE_APK := tailscale-release.apk
 RELEASE_AAB := tailscale-release.aab
 RELEASE_TV_AAB := tailscale-tv-release.aab
 
@@ -122,6 +123,17 @@ tailscale-debug: $(DEBUG_APK)
 $(DEBUG_APK): libtailscale debug-symbols version gradle-dependencies build-unstripped-aar
 	(cd android && ./gradlew test assembleDebug)
 	install -C android/build/outputs/apk/debug/android-debug.apk $@
+
+# Builds the unsigned release APK
+android/build/outputs/apk/release/android-release-unsigned.apk: version gradle-dependencies
+	(cd android && ./gradlew assembleRelease)
+
+# Builds and signs the release APK (for F-Droid distribution)
+$(RELEASE_APK): jarsign-env android/build/outputs/apk/release/android-release-unsigned.apk
+	@apksigner sign --ks "$$JKS_PATH" --ks-pass "env:JKS_PASSWORD" --ks-key-alias tailscale --out $@ android/build/outputs/apk/release/android-release-unsigned.apk
+
+.PHONY: release-apk
+release-apk: $(RELEASE_APK) ## Build and sign the release APK
 
 # Builds the release AAB and signs it (phone/tablet/chromeOS variant)
 .PHONY: release
