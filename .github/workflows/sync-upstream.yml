@@ -1,0 +1,58 @@
+name: Sync with Upstream
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Set up Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump to latest upstream
+        id: bump
+        run: |
+          # Run make bumposs to update to latest upstream
+          make bumposs || {
+            echo "bumposs failed!"
+            echo "run make bumposs locally and resolve any issues"
+            exit 1
+          }
+
+          # Check if there were any changes
+          if git diff --quiet HEAD~1; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "Already up to date with upstream"
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+
+            # Get the new version
+            source tailscale.version
+            echo "version=$VERSION_LONG" >> $GITHUB_OUTPUT
+            echo "Updated to version: $VERSION_LONG"
+          fi
+
+      - name: Push changes
+        if: steps.bump.outputs.has_changes == 'true'
+        run: |
+          # Push the commit and tag created by make bumposs
+          git push origin main
+          git push origin --tags
