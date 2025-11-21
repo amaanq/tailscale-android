@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 if [[ -z "$TOOLCHAIN_DIR" ]]; then
     # By default, if TOOLCHAIN_DIR is unset, we assume we're
