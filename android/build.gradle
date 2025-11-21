@@ -40,14 +40,6 @@ android {
         versionCode 468
         versionName getVersionProperty("VERSION_LONG")
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-
-        // This setting, which defaults to 'true', will cause Tailscale to fall
-        // back to the Google DNS servers if it cannot determine what the
-        // operating system's DNS configuration is.
-        //
-        // Set it to false either here or in your local.properties file to
-        // disable this behaviour.
-        buildConfigField "boolean", "USE_GOOGLE_DNS_FALLBACK", getLocalProperty("tailscale.useGoogleDnsFallback", "true")
     }
 
     compileOptions {

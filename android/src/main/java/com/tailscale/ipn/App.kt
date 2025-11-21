@@ -90,7 +90,7 @@ class App : UninitializedApp(), libtailscale.AppContext, ViewModelStoreOwner {
 
   override fun getInstallSource(): String = AppSourceChecker.getInstallSource(this)
 
-  override fun shouldUseGoogleDNSFallback(): Boolean = BuildConfig.USE_GOOGLE_DNS_FALLBACK
+  override fun shouldUseGoogleDNSFallback(): Boolean = false
 
   override fun log(s: String, s1: String) {
     Log.d(s, s1)
