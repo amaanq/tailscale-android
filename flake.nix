@@ -1,58 +1,54 @@
 {
-  description = "Tailscale build environment";
+  description = "Tailscale Android build environment";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs";
-    android.url = "github:tadfisher/android-nixpkgs";
-    android.inputs.nixpkgs.follows = "nixpkgs";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
-  outputs = { self, nixpkgs, android }:
+  outputs =
+    inputs:
     let
-      supportedSystems = [ "x86_64-linux" "x86_64-darwin" "aarch64-darwin" ];
-      forAllSystems = f: nixpkgs.lib.genAttrs supportedSystems (system: f system);
+      system = "x86_64-linux";
+      pkgs = import inputs.nixpkgs {
+        inherit system;
+        config = {
+          allowUnfree = true;
+          android_sdk.accept_license = true;
+        };
+      };
+
+      androidComposition = pkgs.androidenv.composeAndroidPackages {
+        platformVersions = [
+          "34"
+          "31"
+          "30"
+        ];
+        buildToolsVersions = [
+          "34.0.0"
+          "30.0.2"
+        ];
+        includeNDK = true;
+        ndkVersions = [ "23.1.7779620" ];
+        includeSystemImages = false;
+      };
+
+      androidSdk = androidComposition.androidsdk;
     in
     {
-      devShells = forAllSystems
-        (system:
-          let
-            pkgs = import nixpkgs {
-              inherit system;
-            };
-            android-sdk = android.sdk.${system} (sdkPkgs: with sdkPkgs;
-              [
-                build-tools-30-0-2
-                cmdline-tools-latest
-                platform-tools
-                platforms-android-31
-                platforms-android-30
-                ndk-23-1-7779620
-                patcher-v4
-              ]);
-          in
-          {
-            default = (with pkgs; buildFHSUserEnv {
-              name = "tailscale";
-              profile = ''
-                export ANDROID_SDK_ROOT="${android-sdk}/share/android-sdk"
-                export JAVA_HOME="${jdk8.home}"
-              '';
-              targetPkgs = pkgs: with pkgs; [
-                android-sdk
-                jdk8
-                clang
-              ] ++ (if stdenv.isLinux then [
-                vulkan-headers
-                libxkbcommon
-                wayland
-                xorg.libX11
-                xorg.libXcursor
-                xorg.libXfixes
-                libGL
-                pkgconfig
-              ] else [ ]);
-            }).env;
-          }
-        );
+      devShells.${system}.default = pkgs.mkShell {
+        buildInputs = [
+          pkgs.jdk17
+          pkgs.gradle
+          androidSdk
+          pkgs.go
+          pkgs.zip
+          pkgs.unzip
+        ];
+
+        ANDROID_HOME = "${androidSdk}/libexec/android-sdk";
+        ANDROID_SDK_ROOT = "${androidSdk}/libexec/android-sdk";
+        JAVA_HOME = "${pkgs.jdk17}";
+        GRADLE_OPTS = "-Dorg.gradle.project.android.aapt2FromMavenOverride=${androidSdk}/libexec/android-sdk/build-tools/34.0.0/aapt2";
+      };
     };
 }
