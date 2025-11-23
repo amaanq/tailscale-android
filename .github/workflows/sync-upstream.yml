@@ -27,32 +27,42 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Bump to latest upstream
-        id: bump
+      - name: Sync with upstream
+        id: sync
         run: |
-          # Run make bumposs to update to latest upstream
-          make bumposs || {
-            echo "bumposs failed!"
-            echo "run make bumposs locally and resolve any issues"
+          git remote add upstream https://github.com/tailscale/tailscale-android.git 2>/dev/null || true
+
+          git fetch upstream
+
+          BEHIND=$(git rev-list HEAD..upstream/main --count)
+
+          if [ "$BEHIND" -eq 0 ]; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "Already up to date with upstream"
+            exit 0
+          fi
+
+          echo "Upstream has $BEHIND new commit(s)"
+
+          git rebase upstream/main || {
+            echo "Rebase failed! Manual intervention required."
+            git rebase --abort
             exit 1
           }
 
-          # Check if there were any changes
-          if git diff --quiet HEAD~1; then
-            echo "has_changes=false" >> $GITHUB_OUTPUT
-            echo "Already up to date with upstream"
-          else
-            echo "has_changes=true" >> $GITHUB_OUTPUT
+          echo "has_changes=true" >> $GITHUB_OUTPUT
+          echo "Successfully synced with upstream"
 
-            # Get the new version
-            source tailscale.version
-            echo "version=$VERSION_LONG" >> $GITHUB_OUTPUT
-            echo "Updated to version: $VERSION_LONG"
-          fi
+      - name: Create release tag
+        if: steps.sync.outputs.has_changes == 'true'
+        run: |
+          make tailscale.version
+          source tailscale.version
+          git tag -a "${VERSION_LONG}" -m "Synced with upstream - ${VERSION_LONG}"
+          echo "Created tag: ${VERSION_LONG}"
 
       - name: Push changes
-        if: steps.bump.outputs.has_changes == 'true'
+        if: steps.sync.outputs.has_changes == 'true'
         run: |
-          # Push the commit and tag created by make bumposs
-          git push origin main
+          git push --force-with-lease origin main
           git push origin --tags
